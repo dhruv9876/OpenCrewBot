@@ -3,6 +3,7 @@
 import { createClient, type Client } from "@libsql/client";
 import { APP_DB_URL } from "./config";
 import type { Bot, ChatMessage, ConversationId, Room } from "@/lib/shared/types";
+import type { Plan } from "@/lib/shared/tasks";
 
 // Cached across hot reloads, together with the file it points at, so a
 // changed database path opens a fresh connection instead of reusing one
@@ -10,7 +11,7 @@ import type { Bot, ChatMessage, ConversationId, Room } from "@/lib/shared/types"
 const g = globalThis as unknown as { __opencrewbotDb?: { url: string; schema?: number; client: Promise<Client> } };
 
 /** Bump when a table is added, so a hot-reloaded server re-runs the CREATE statements. */
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
 
 async function open(): Promise<Client> {
   const db = createClient({ url: APP_DB_URL });
@@ -30,6 +31,12 @@ async function open(): Promise<Client> {
         id TEXT PRIMARY KEY,
         generation INTEGER NOT NULL DEFAULT 0,
         last_read_at TEXT
+      )`,
+      // Chief of Staff plans and their tasks (one JSON document per plan; history is kept forever).
+      `CREATE TABLE IF NOT EXISTS plans (
+        id TEXT PRIMARY KEY,
+        created_at TEXT NOT NULL,
+        data TEXT NOT NULL
       )`,
     ],
     "write",
@@ -193,4 +200,25 @@ export async function bumpGeneration(conversationId: ConversationId): Promise<nu
     args: [conversationId],
   });
   return conversationGeneration(conversationId);
+}
+
+// ── Chief of Staff plans ────────────────────────────────────────────────
+
+export async function savePlan(plan: Plan): Promise<void> {
+  await (await db()).execute({
+    sql: `INSERT INTO plans (id, created_at, data) VALUES (?, ?, ?)
+          ON CONFLICT(id) DO UPDATE SET data = excluded.data`,
+    args: [plan.id, plan.createdAt, JSON.stringify(plan)],
+  });
+}
+
+export async function getPlan(id: string): Promise<Plan | null> {
+  const rows = await (await db()).execute({ sql: "SELECT data FROM plans WHERE id = ?", args: [id] });
+  return rows.rows[0] ? (JSON.parse(String(rows.rows[0].data)) as Plan) : null;
+}
+
+/** Newest first. */
+export async function listPlans(limit = 100): Promise<Plan[]> {
+  const rows = await (await db()).execute({ sql: "SELECT data FROM plans ORDER BY created_at DESC LIMIT ?", args: [limit] });
+  return rows.rows.map((r) => JSON.parse(String(r.data)) as Plan);
 }

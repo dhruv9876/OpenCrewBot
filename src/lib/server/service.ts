@@ -12,6 +12,7 @@ import { deleteWorkspace, writeMemory } from "./memory-files";
 import { forgetConversation, resetBot, runTurn, runningBots, stopConversation } from "./runtime";
 import { messagePreview } from "@/lib/shared/preview";
 import { roomConversationId, runRoom } from "./rooms";
+import { recoverPlans } from "./engine";
 
 export { InputError };
 
@@ -22,6 +23,7 @@ const g = globalThis as unknown as { __opencrewbotBoot?: Promise<void> };
 export function boot(): Promise<void> {
   g.__opencrewbotBoot ??= (async () => {
     await sweepInterrupted();
+    await recoverPlans();
     await seed();
   })();
   return g.__opencrewbotBoot;

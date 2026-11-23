@@ -140,7 +140,9 @@ export type ServerEvent =
   | { type: "memory-changed"; botId: string }
   /** A bot's Browserbase live view opened (url) or closed (null). */
   | { type: "browser-session"; botId: string; liveUrl: string | null }
-  | { type: "connections-changed" };
+  | { type: "connections-changed" }
+  /** A Chief of Staff plan or one of its tasks changed. */
+  | { type: "plans-changed"; planId?: string };
 
 /** An app from Composio's catalog, with this install's connection state. */
 export interface ComposioApp {

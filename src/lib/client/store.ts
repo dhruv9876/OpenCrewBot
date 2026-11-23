@@ -21,6 +21,8 @@ export interface AppState {
   liveViews: Record<string, string>;
   /** Bumped when apps or MCP servers change, so views refetch them. */
   connectionsVersion: number;
+  /** Bumped when a Chief of Staff plan or task changes, so the task dashboard refetches. */
+  plansVersion: number;
 }
 
 export const initialState: AppState = {
@@ -36,6 +38,7 @@ export const initialState: AppState = {
   counted: {},
   liveViews: {},
   connectionsVersion: 0,
+  plansVersion: 0,
 };
 
 export type Action =
@@ -166,6 +169,8 @@ function applyEvent(state: AppState, event: ServerEvent): AppState {
     }
     case "connections-changed":
       return { ...state, connectionsVersion: state.connectionsVersion + 1 };
+    case "plans-changed":
+      return { ...state, plansVersion: state.plansVersion + 1 };
     case "bots-changed":
     case "rooms-changed":
       // The provider refetches the bootstrap payload for these.
