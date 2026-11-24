@@ -91,6 +91,11 @@ export function createMockModel(botName: string) {
           options: [{ label: "Short" }, { label: "Detailed", description: "With sources and caveats" }],
         });
       }
+      const send = said.match(/send (?:an? )?(email|slack message|message) to (\S+?)(?:[:,]| saying| that|$|\s)\s*(.*)/i);
+      if (send && tools.has("outbox_send")) {
+        const channel = /slack/i.test(send[1]) ? "slack" : "email";
+        return toolCall("outbox_send", { to: send[2].replace(/[:,]$/, ""), subject: "Message from your agent", body: send[3] || said, channel });
+      }
       const url = said.match(/\bopen (https?:\/\/\S+)/i);
       if (url && tools.has("browser_goto")) return toolCall("browser_goto", { url: url[1] });
       const search = said.match(/(?:search|look up|find)\s+(?:for\s+)?(.+)/i);

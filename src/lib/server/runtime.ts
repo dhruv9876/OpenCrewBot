@@ -17,6 +17,7 @@ import { createMockModel } from "./mock-model";
 import { announceLiveView, createSession, releaseSession } from "./browserbase";
 import { buildConnectorTools, connectionsVersion } from "./connectors";
 import { systemPrompt } from "./prompt";
+import { decideAuto, previewArgs, recordAudit, recordDecision, recordRequest } from "./approvals";
 import { buildTools, toolCategory, toolLabel, toolPreview, toolSources } from "./tools";
 
 // ── shared state that must survive Next.js hot reloads ─────────────────
@@ -202,6 +203,9 @@ class TurnFolder {
   private textPart = new Map<string, number>();
   private reasoningPart = new Map<string, number>();
   private toolPart = new Map<string, number>();
+  /** Tool calls in this turn that asked for approval, so their outcome (ran or did not) is logged. */
+  private approvalIds = new Set<string>();
+  private mode: Bot["approval"];
   private input = 0;
   private output = 0;
   private resolveDone!: (m: ChatMessage) => void;
@@ -209,6 +213,7 @@ class TurnFolder {
   finished = false;
 
   constructor(conversationId: ConversationId, bot: Bot, route?: RouteNote) {
+    this.mode = bot.approval;
     this.message = {
       id: randomUUID(),
       conversationId,
@@ -267,6 +272,22 @@ class TurnFolder {
         const { label, detail } = toolLabel(event.toolName, event.args);
         this.message.parts.push({ kind: "tool", toolCallId: event.toolCallId, name: event.toolName, label, detail, status: "running" });
         this.toolPart.set(event.toolCallId, this.message.parts.length - 1);
+        // Full Access never asks, so log the action here: it still shows up in the audit log.
+        const cat = toolCategory(event.toolName);
+        if (this.mode === "full" && (cat === "execute" || cat === "mcp")) {
+          void recordAudit({
+            conversationId: this.message.conversationId,
+            botId: this.message.botId!,
+            toolCallId: event.toolCallId,
+            tool: event.toolName,
+            label,
+            detail,
+            argsPreview: previewArgs(event.args),
+            event: "executed",
+            by: "policy",
+            note: "Full Access: ran without asking.",
+          }).catch(() => {});
+        }
         this.emit(true);
         break;
       }
@@ -279,6 +300,16 @@ class TurnFolder {
           part = this.tool(event.toolCallId);
         }
         part!.status = "awaiting-approval";
+        this.approvalIds.add(event.toolCallId);
+        void onApprovalRequired({
+          conversationId: this.message.conversationId,
+          botId: this.message.botId!,
+          toolCallId: event.toolCallId,
+          toolName: event.toolName,
+          label: part!.label,
+          detail: part!.detail,
+          args: event.args,
+        }).catch((error) => console.error("[opencrewbot] approval hook failed", error));
         this.emit(true);
         break;
       }
@@ -298,6 +329,19 @@ class TurnFolder {
         const part = this.tool(event.toolCallId);
         if (!part) break;
         part.status = event.denied ? "denied" : event.isError ? "error" : "done";
+        if (this.approvalIds.has(event.toolCallId)) {
+          void recordAudit({
+            conversationId: this.message.conversationId,
+            botId: this.message.botId!,
+            toolCallId: event.toolCallId,
+            tool: part.name,
+            label: part.label,
+            detail: part.detail,
+            event: event.denied ? "not-executed" : "executed",
+            by: "system",
+            note: event.denied ? "Rejected or stopped: the action did not run." : event.isError ? "Ran after approval but returned an error." : "Ran after approval.",
+          }).catch(() => {});
+        }
         part.preview = toolPreview(event.result);
         part.sources = toolSources(event.result);
         this.emit(true);
@@ -340,6 +384,19 @@ class TurnFolder {
     this.message.status = status;
     for (const p of this.message.parts) {
       if (p.kind === "tool" && (p.status === "running" || p.status === "awaiting-approval")) {
+        if (p.status === "awaiting-approval" && this.approvalIds.has(p.toolCallId)) {
+          void recordAudit({
+            conversationId: this.message.conversationId,
+            botId: this.message.botId!,
+            toolCallId: p.toolCallId,
+            tool: p.name,
+            label: p.label,
+            detail: p.detail,
+            event: "not-executed",
+            by: "system",
+            note: status === "stopped" ? "Cancelled while waiting for approval: the action did not run." : "The turn ended before a decision: the action did not run.",
+          }).catch(() => {});
+        }
         p.status = status === "stopped" ? "denied" : "error";
       }
     }
@@ -412,7 +469,27 @@ async function executeTurn({ bot, conversationId, content, route }: TurnRequest)
 export async function respondToApproval(conversationId: ConversationId, botId: string, toolCallId: string, approve: boolean) {
   const session = state.sessions.get(key(conversationId, botId));
   if (!session) throw new Error("That request is no longer waiting. The bot may have restarted.");
+  // Log first, then pass the decision on. A declined call is never run by the harness.
+  await recordDecision(conversationId, botId, toolCallId, approve ? "approved" : "rejected", "person");
   await session.respondToToolApproval({ toolCallId, decision: approve ? "approve" : "decline" });
+}
+
+/** An agent asked to run a sensitive action: log it, and in Controlled Access answer it by policy if a rule allows. */
+async function onApprovalRequired(info: { conversationId: ConversationId; botId: string; toolCallId: string; toolName: string; label: string; detail?: string; args: unknown }) {
+  await recordRequest(info);
+  const bot = await getBot(info.botId);
+  if (!bot) return;
+  const verdict = await decideAuto(bot, info.conversationId, info.toolName);
+  if (verdict.kind === "ask") {
+    if (bot.approval === "controlled" && verdict.reason?.startsWith("Automatic limit")) {
+      await recordDecision(info.conversationId, info.botId, info.toolCallId, "limit-reached", "policy", verdict.reason);
+    }
+    return; // waits for a person in the approval centre or in chat
+  }
+  const session = state.sessions.get(key(info.conversationId, info.botId));
+  if (!session) return;
+  await recordDecision(info.conversationId, info.botId, info.toolCallId, "auto-approved", "policy", verdict.reason);
+  await session.respondToToolApproval({ toolCallId: info.toolCallId, decision: "approve" });
 }
 
 export async function answerQuestion(conversationId: ConversationId, botId: string, toolCallId: string, answer: string) {

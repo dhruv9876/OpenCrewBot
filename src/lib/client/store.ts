@@ -171,6 +171,7 @@ function applyEvent(state: AppState, event: ServerEvent): AppState {
       return { ...state, connectionsVersion: state.connectionsVersion + 1 };
     case "plans-changed":
       return { ...state, plansVersion: state.plansVersion + 1 };
+    case "approvals-changed":
     case "bots-changed":
     case "rooms-changed":
       // The provider refetches the bootstrap payload for these.

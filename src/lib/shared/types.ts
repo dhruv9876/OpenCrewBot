@@ -1,6 +1,14 @@
 // Types shared by the server and the browser. Everything here is plain JSON.
 
-export type ApprovalMode = "ask" | "full";
+/** Ask First, Controlled Access (pre-approved tools within a limit) or Full Access. */
+export type ApprovalMode = "ask" | "controlled" | "full";
+
+/** Controlled Access: which tools may run without asking, and how many times per chat. */
+export interface AutoApprove {
+  /** Tool names, `*` allowed as a wildcard, e.g. "outbox_send" or "mcp_*_get_*". */
+  tools: string[];
+  maxPerConversation: number;
+}
 
 export interface BotTools {
   /** Tavily search, extract and crawl. */
@@ -13,6 +21,8 @@ export interface BotTools {
   browser: boolean;
   /** The bot may stop and ask you a question with a card in chat. */
   askUser: boolean;
+  /** A SIMULATED outbox: the agent can "send" a message that is stored locally and goes nowhere. Asks first. */
+  outbox?: boolean;
 }
 
 export interface Bot {
@@ -30,6 +40,8 @@ export interface Bot {
   /** Connection ids this bot may use: `composio:<toolkit>` or `mcp:<serverId>`. */
   connections: string[];
   approval: ApprovalMode;
+  /** Used only when approval is "controlled". */
+  autoApprove?: AutoApprove;
   pinned: boolean;
   createdAt: string;
   /** Skills this agent is built around (the skills library is a later module). */
@@ -152,7 +164,9 @@ export type ServerEvent =
   | { type: "browser-session"; botId: string; liveUrl: string | null }
   | { type: "connections-changed" }
   /** A Chief of Staff plan or one of its tasks changed. */
-  | { type: "plans-changed"; planId?: string };
+  | { type: "plans-changed"; planId?: string }
+  /** An approval was requested or decided, or the audit log grew. */
+  | { type: "approvals-changed" };
 
 /** An app from Composio's catalog, with this install's connection state. */
 export interface ComposioApp {

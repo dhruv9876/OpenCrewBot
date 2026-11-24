@@ -178,6 +178,12 @@ export function BotForm({ bot, onDone }: { bot?: Bot; onDone?: (bot: Bot) => voi
               checked={form.tools.browser}
               onChange={(v) => setTool("browser", v)}
             />
+            <Toggle
+              label="Send messages (simulated)"
+              hint="Can email or Slack someone. It goes to a local outbox, not out into the world. Asks you first."
+              checked={Boolean(form.tools.outbox)}
+              onChange={(v) => setTool("outbox", v)}
+            />
             <Toggle label="Ask me questions" hint="Can pause and ask you with a card in chat." checked={form.tools.askUser} onChange={(v) => setTool("askUser", v)} />
           </div>
         </div>
@@ -187,11 +193,39 @@ export function BotForm({ bot, onDone }: { bot?: Bot; onDone?: (bot: Bot) => voi
             value={form.approval}
             onChange={(v) => set("approval", v)}
             options={[
-              { value: "ask", label: "Ask first", hint: "Browser actions wait for your OK." },
+              { value: "ask", label: "Ask first", hint: "Every external action waits for your OK." },
+              { value: "controlled", label: "Controlled", hint: "Pre-approved actions run, up to a limit." },
               { value: "full", label: "Full access", hint: "Acts without asking." },
             ]}
           />
         </Field>
+        {form.approval === "controlled" && (
+          <>
+            <Field label="Pre-approved tools" hint="Comma-separated tool names; * is a wildcard. Example: outbox_send, mcp_*_get_*. Everything else still asks.">
+              <input
+                className={inputClass}
+                value={(form.autoApprove?.tools ?? []).join(", ")}
+                onChange={(e) =>
+                  set("autoApprove", {
+                    tools: e.target.value.split(",").map((t) => t.trim()).filter(Boolean),
+                    maxPerConversation: form.autoApprove?.maxPerConversation ?? 5,
+                  })
+                }
+                placeholder="outbox_send"
+              />
+            </Field>
+            <Field label="Automatic actions per chat" hint="After this many, it asks you again.">
+              <input
+                className={inputClass}
+                type="number"
+                min={1}
+                max={50}
+                value={form.autoApprove?.maxPerConversation ?? 5}
+                onChange={(e) => set("autoApprove", { tools: form.autoApprove?.tools ?? [], maxPerConversation: Math.max(1, Number(e.target.value) || 1) })}
+              />
+            </Field>
+          </>
+        )}
 
         {bot && (
           <div className="pt-2">

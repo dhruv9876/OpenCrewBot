@@ -11,6 +11,7 @@ import { appendMemory, editMemory } from "./memory-files";
 import { publish } from "./bus";
 import { keys } from "./config";
 import { mcpServerNames } from "./connectors";
+import { sendToOutbox } from "./approvals";
 
 export const CODE_MODE_TOOL = "execute_typescript";
 
@@ -39,6 +40,26 @@ function memoryTools(botId: string): ToolsInput {
         const result = editMemory(botId, find, replace);
         if (result.ok) publish({ type: "memory-changed", botId });
         return result;
+      },
+    }),
+  };
+}
+
+function outboxTools(bot: Bot): ToolsInput {
+  return {
+    outbox_send: createTool({
+      id: "outbox_send",
+      description:
+        "Send an email or Slack message to a person. This is an external action, so it waits for approval unless you have been given access. (Simulated: the message is stored in the local outbox and is not delivered anywhere.)",
+      inputSchema: z.object({
+        to: z.string().min(1).describe("Recipient, e.g. an email address or a Slack channel."),
+        subject: z.string().optional(),
+        body: z.string().min(1).describe("The message text."),
+        channel: z.enum(["email", "slack"]).default("email"),
+      }),
+      execute: async ({ to, subject, body, channel }) => {
+        const item = await sendToOutbox(bot, { to, subject, body, channel: channel ?? "email" });
+        return { sent: true, simulated: true, id: item.id, note: "Stored in the local outbox. Nothing was delivered outside this machine." };
       },
     }),
   };
@@ -86,6 +107,12 @@ export function buildTools(bot: Bot): BotToolset {
       `Run TypeScript with ${CODE_MODE_TOOL} when a question needs several tool calls, filtering, or exact arithmetic; call the other tools from inside it with Promise.all.`,
     );
   }
+  // Added after Code Mode on purpose: code run inside Code Mode can reach only the tools above, so it
+  // can never call a sensitive action around the approval check.
+  if (bot.tools.outbox) {
+    Object.assign(tools, outboxTools(bot));
+    capabilities.push("Send an email or Slack message with outbox_send. It is an external action: wait for approval, and say exactly what you will send. (Simulated outbox: nothing is really delivered.)");
+  }
   if (bot.tools.browser && keys.browserbase()) {
     capabilities.push(
       "Drive a real cloud browser with the browser_* tools for pages that need clicks, forms or JavaScript. Start with browser_goto, then browser_snapshot to get element refs. The person can watch you live. Prefer read_page for plain reading; it's faster.",
@@ -112,6 +139,7 @@ export function toolCategory(toolName: string): ToolCategory | null {
     const action = toolName.split("_").slice(2).join("_");
     return READ_ONLY_VERB.test(action) ? "read" : "mcp";
   }
+  if (toolName === "outbox_send") return "execute";
   if (toolName.startsWith("memory_")) return "edit";
   if (toolName.startsWith("browser_")) {
     return /snapshot|screenshot|scroll|wait|tabs|close|get_|read|extract|console/.test(toolName) ? "read" : "execute";
@@ -169,6 +197,8 @@ export function toolLabel(name: string, args: unknown): { label: string; detail?
       return { label: "Ran code" };
     case "ask_user":
       return { label: "Asked you" };
+    case "outbox_send":
+      return { label: `Send ${a.channel === "slack" ? "Slack message" : "email"} (simulated)`, detail: `To ${String(a.to ?? "")}${a.subject ? `: ${String(a.subject)}` : ""}` };
     default:
       if (name.startsWith("browser_")) {
         const action = name.slice("browser_".length).replace(/_/g, " ");
