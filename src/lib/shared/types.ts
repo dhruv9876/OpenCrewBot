@@ -32,6 +32,16 @@ export interface Bot {
   approval: ApprovalMode;
   pinned: boolean;
   createdAt: string;
+  /** Skills this agent is built around (the skills library is a later module). */
+  skills?: string[];
+  /** What this agent's answers should look like. */
+  outputFormat?: string;
+  /** Model to fall back to if `model` fails (used by multi-model routing later). */
+  fallbackModel?: string;
+  /** How the agent came to exist. */
+  origin?: "seed" | "manual" | "factory";
+  /** The plain-language request the agent factory built it from. */
+  createdFrom?: string;
 }
 
 export type BotInput = Omit<Bot, "id" | "createdAt" | "handle" | "connections"> & { handle?: string; connections?: string[] };
