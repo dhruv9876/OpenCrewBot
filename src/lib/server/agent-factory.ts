@@ -96,11 +96,11 @@ function toInput(d: DraftShape, description: string): BotInput {
 // ── mock-mode heuristic ───────────────────────────────────────────────────
 
 const RULES: { re: RegExp; role: string; emoji: string; tools: Partial<DraftShape["tools"]>; skills: string[]; persona: string }[] = [
-  { re: /\b(lead|prospect|outreach)\b/i, role: "Lead Generator", emoji: "🎯", tools: { webSearch: true }, skills: ["Lead Generation", "Email Drafting"], persona: "You find and qualify potential customers, and draft short, honest outreach." },
-  { re: /\b(research|competitor|market|intelligence|landscape)\b/i, role: "Market Researcher", emoji: "🔭", tools: { webSearch: true }, skills: ["Market Research", "Competitor Analysis"], persona: "You research markets and competitors, read the best sources, and report findings with the URLs you used." },
-  { re: /\b(data|spreadsheet|csv|excel|sales|revenue|metrics|finance|financial)\b/i, role: "Data Analyst", emoji: "📊", tools: { codeMode: true }, skills: ["Data Analysis", "Financial Modelling"], persona: "You analyse data with real calculations, show your numbers, and turn them into recommendations." },
-  { re: /\b(write|copy|content|campaign|social|blog|marketing|email|presentation|deck)\b/i, role: "Content Writer", emoji: "✍️", tools: { webSearch: true }, skills: ["Email Drafting", "Presentation Creation"], persona: "You write clear, on-brand content and drafts, and you adapt tone to the audience." },
-  { re: /\b(code|developer|github|repo|repository|bug|engineer|review)\b/i, role: "Code Reviewer", emoji: "🛠️", tools: { codeMode: true }, skills: ["Code Review"], persona: "You inspect code and repositories, find real issues, and propose prioritised, concrete fixes." },
+  { re: /\b(leads?\b|prospect|outreach)/i, role: "Lead Generator", emoji: "🎯", tools: { webSearch: true }, skills: ["Lead Generation", "Email Drafting"], persona: "You find and qualify potential customers, and draft short, honest outreach." },
+  { re: /\b(research|competitor|market|intelligence|landscape)/i, role: "Market Researcher", emoji: "🔭", tools: { webSearch: true }, skills: ["Market Research", "Competitor Analysis"], persona: "You research markets and competitors, read the best sources, and report findings with the URLs you used." },
+  { re: /\b(data|spreadsheet|csv|excel|sales|revenue|metric|financ)/i, role: "Data Analyst", emoji: "📊", tools: { codeMode: true }, skills: ["Data Analysis", "Financial Modelling"], persona: "You analyse data with real calculations, show your numbers, and turn them into recommendations." },
+  { re: /\b(writ|copy|content|campaign|social|blog|marketing|email|presentation|deck)/i, role: "Content Writer", emoji: "✍️", tools: { webSearch: true }, skills: ["Email Drafting", "Presentation Creation"], persona: "You write clear, on-brand content and drafts, and you adapt tone to the audience." },
+  { re: /\b(code|developer|github|repo|bug|engineer|review)/i, role: "Code Reviewer", emoji: "🛠️", tools: { codeMode: true }, skills: ["Code Review"], persona: "You inspect code and repositories, find real issues, and propose prioritised, concrete fixes." },
 ];
 
 function designWithHeuristic(description: string): DraftShape {
@@ -109,8 +109,8 @@ function designWithHeuristic(description: string): DraftShape {
   const named = description.match(/\b(?:called|named)\s+["']?([A-Za-z][\w-]{1,30})/i)?.[1];
   const tools = { webSearch: false, memory: true, codeMode: false, browser: false, askUser: true };
   for (const h of hits) Object.assign(tools, h.tools);
-  const wantsTable = /\btable\b/i.test(description);
-  const wantsReport = /\breport\b/i.test(description);
+  const wantsTable = /\btables?\b/i.test(description);
+  const wantsReport = /\breports?\b/i.test(description);
   return {
     name: named ?? primary?.role ?? "Assistant",
     title: primary?.role ?? "Generalist",
